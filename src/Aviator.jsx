@@ -1,17 +1,19 @@
 import { useEffect, useRef, useState } from "react";
 
-const NAMES = ["Akwasi", "Adwoa", "Kojo", "Kweku", "Fiifi", "Ama", "Esi", "Yaw"];
 const HISTORY = ["1.27x", "15.34x", "2.34x", "1.12x", "5.67x", "1.05x"];
 
 export default function Aviator({ balance, setBalance }) {
   const [multiplier, setMultiplier] = useState(1.0);
   const [phase, setPhase] = useState("flying");
   const [round, setRound] = useState(56447);
-  const [bet1, setBet1] = useState({ amount: "10", auto: "2.00", placed: false, cashed: false, cashAt: null });
-  const [bet2, setBet2] = useState({ amount: "10", auto: "5.00", placed: false, cashed: false, cashAt: null });
   const [msg, setMsg] = useState("");
   const intervalRef = useRef(null);
 
+  // Bet 1 + Bet 2 - now with Auto Bet + Auto Cashout toggles
+  const [bet1, setBet1] = useState({ amount: "10", auto: "2.00", placed: false, cashed: false, cashAt: null, autoBet: false, autoCashout: true });
+  const [bet2, setBet2] = useState({ amount: "10", auto: "5.00", placed: false, cashed: false, cashAt: null, autoBet: false, autoCashout: true });
+
+  // Game loop
   useEffect(() => {
     if (phase !== "flying") return;
     const crashAt = 1.5 + Math.random() * 6;
@@ -21,7 +23,14 @@ export default function Aviator({ balance, setBalance }) {
         if (next >= crashAt) {
           clearInterval(intervalRef.current);
           setPhase("crashed");
-          setTimeout(() => { setRound((r) => r + 1); setMultiplier(1.0); setBet1((b) => ({ ...b, placed: false, cashed: false })); setBet2((b) => ({ ...b, placed: false, cashed: false })); setPhase("waiting"); setTimeout(() => setPhase("flying"), 3000); }, 2500);
+          setTimeout(() => {
+            setRound((r) => r + 1);
+            setMultiplier(1.0);
+            setBet1((b) => ({ ...b, placed: false, cashed: false, cashAt: null }));
+            setBet2((b) => ({ ...b, placed: false, cashed: false, cashAt: null }));
+            setPhase("waiting");
+            setTimeout(() => setPhase("flying"), 3000);
+          }, 2500);
           return crashAt;
         }
         return next;
@@ -30,15 +39,44 @@ export default function Aviator({ balance, setBalance }) {
     return () => clearInterval(intervalRef.current);
   }, [phase, round]);
 
+  // --- AUTO BET: Place bet automatically when new round starts ---
+  useEffect(() => {
+    if (phase !== "waiting") return;
+    // Bet 1 Auto Bet
+    if (bet1.autoBet && !bet1.placed) {
+      const amt = parseFloat(bet1.amount || 0);
+      if (amt > 0 && amt <= balance) {
+        setBalance((b) => b - amt);
+        setBet1((b) => ({ ...b, placed: true, cashed: false }));
+        setMsg(`🤖 Bet 1 AUTO placed: GHS ${amt}`);
+      }
+    }
+    // Bet 2 Auto Bet
+    if (bet2.autoBet && !bet2.placed) {
+      const amt = parseFloat(bet2.amount || 0);
+      if (amt > 0 && amt <= balance) {
+        setBalance((b) => b - amt);
+        setBet2((b) => ({ ...b, placed: true, cashed: false }));
+        setMsg(`🤖 Bet 2 AUTO placed: GHS ${amt}`);
+      }
+    }
+    // eslint-disable-next-line
+  }, [phase]);
+
+  // --- AUTO CASHOUT: Cash out automatically at target ---
   useEffect(() => {
     if (phase !== "flying") return;
-    if (bet1.placed && !bet1.cashed && multiplier >= parseFloat(bet1.auto || "999")) {
+    if (bet1.placed && !bet1.cashed && bet1.autoCashout && multiplier >= parseFloat(bet1.auto || "999")) {
       const win = (parseFloat(bet1.amount || 0) * multiplier).toFixed(2);
-      setBalance((b) => b + parseFloat(win)); setBet1((b) => ({ ...b, cashed: true, cashAt: multiplier.toFixed(2) })); setMsg(`Bet 1 @ ${multiplier.toFixed(2)}x - Won GHS ${win} ✅`);
+      setBalance((b) => b + parseFloat(win));
+      setBet1((b) => ({ ...b, cashed: true, cashAt: multiplier.toFixed(2) }));
+      setMsg(`🤖 Bet 1 AUTO CASHOUT @ ${multiplier.toFixed(2)}x - Won GHS ${win} ✅`);
     }
-    if (bet2.placed && !bet2.cashed && multiplier >= parseFloat(bet2.auto || "999")) {
+    if (bet2.placed && !bet2.cashed && bet2.autoCashout && multiplier >= parseFloat(bet2.auto || "999")) {
       const win = (parseFloat(bet2.amount || 0) * multiplier).toFixed(2);
-      setBalance((b) => b + parseFloat(win)); setBet2((b) => ({ ...b, cashed: true, cashAt: multiplier.toFixed(2) })); setMsg(`Bet 2 @ ${multiplier.toFixed(2)}x - Won GHS ${win} ✅`);
+      setBalance((b) => b + parseFloat(win));
+      setBet2((b) => ({ ...b, cashed: true, cashAt: multiplier.toFixed(2) }));
+      setMsg(`🤖 Bet 2 AUTO CASHOUT @ ${multiplier.toFixed(2)}x - Won GHS ${win} ✅`);
     }
   }, [multiplier, phase, bet1, bet2, setBalance]);
 
@@ -55,10 +93,25 @@ export default function Aviator({ balance, setBalance }) {
     setBalance((b) => b + parseFloat(win)); setBet({ ...bet, cashed: true, cashAt: multiplier.toFixed(2) }); setMsg(`Bet ${which} @ ${multiplier.toFixed(2)}x - Won GHS ${win} ✅`);
   };
 
+  const Toggle = ({ on, onClick, label }) => (
+    <div onClick={onClick} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 4, cursor: "pointer", background: "#222", padding: "3px 5px", borderRadius: 5, marginTop: 3 }}>
+      <span style={{ fontSize: 9, color: "#ccc" }}>{label}</span>
+      <span style={{ width: 26, height: 14, borderRadius: 10, background: on ? "#22c55e" : "#444", position: "relative", flexShrink: 0, transition: "0.2s" }}>
+        <span style={{ position: "absolute", top: 2, left: on ? 14 : 2, width: 10, height: 10, borderRadius: "50%", background: "#fff", transition: "0.2s" }} />
+      </span>
+      <span style={{ fontSize: 8, fontWeight: "900", color: on ? "#22c55e" : "#888", width: 18 }}>{on ? "ON" : "OFF"}</span>
+    </div>
+  );
+
   const renderBet = (which, bet, setBet, color, title) => (
     <div style={{ flex: "1 1 170px", minWidth: 0, maxWidth: "100%", background: "#1a1a1a", borderRadius: 6, padding: 6, border: `1px solid ${color}33`, boxSizing: "border-box" }}>
-      <div style={{ color, fontWeight: "900", fontSize: 10, marginBottom: 3 }}>{title}</div>
-      <div style={{ display: "flex", gap: 2 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <span style={{ color, fontWeight: "900", fontSize: 10 }}>{title}</span>
+        <span style={{ fontSize: 8, color: bet.autoBet ? "#22c55e" : "#666" }}>{bet.autoBet ? "🤖 AUTO" : ""}</span>
+      </div>
+
+      {/* AMOUNT */}
+      <div style={{ display: "flex", gap: 2, marginTop: 3 }}>
         <button onClick={() => setBet({ ...bet, amount: String(Math.max(1, parseFloat(bet.amount || 0) - 10)) })} style={{ width: 22, background: "#222", color: "#fff", border: "1px solid #333", borderRadius: 4, fontSize: 12, cursor: "pointer" }}>-</button>
         <input value={bet.amount} onChange={(e) => setBet({ ...bet, amount: e.target.value })} type="number" style={{ flex: 1, minWidth: 0, padding: 3, borderRadius: 4, border: "1.5px solid #008542", background: "#fff", fontWeight: "900", fontSize: 11, textAlign: "center" }} />
         <button onClick={() => setBet({ ...bet, amount: String(parseFloat(bet.amount || 0) + 10) })} style={{ width: 22, background: "#222", color: "#fff", border: "1px solid #333", borderRadius: 4, fontSize: 12, cursor: "pointer" }}>+</button>
@@ -66,11 +119,25 @@ export default function Aviator({ balance, setBalance }) {
       <div style={{ display: "flex", gap: 2, marginTop: 3 }}>
         {["10", "20", "50", "100"].map((v) => <button key={v} onClick={() => setBet({ ...bet, amount: v })} style={{ flex: 1, padding: 3, background: bet.amount === v ? "#ffcc00" : "#2a2a2a", color: bet.amount === v ? "#000" : "#fff", border: "none", borderRadius: 4, fontWeight: "bold", fontSize: 9, cursor: "pointer" }}>{v}</button>)}
       </div>
-      <div style={{ display: "flex", gap: 2, marginTop: 3, flexWrap: "wrap" }}>
-        {["1.50x", "2.00x", "5.00x", "10.00x"].map((v) => { const clean = v.replace("x", ""); const active = bet.auto === clean; return <button key={v} onClick={() => setBet({ ...bet, auto: clean })} style={{ flex: "1 1 0", minWidth: 32, padding: "3px 1px", background: active ? "#ffcc00" : "#2a2a2a", color: active ? "#000" : "#fff", border: "none", borderRadius: 4, fontWeight: "bold", fontSize: 9, cursor: "pointer" }}>{v}</button>; })}
-      </div>
+
+      {/* AUTO BET + AUTO CASHOUT TOGGLES */}
+      <Toggle on={bet.autoBet} onClick={() => setBet({ ...bet, autoBet: !bet.autoBet })} label="🤖 AUTO BET" />
+      <Toggle on={bet.autoCashout} onClick={() => setBet({ ...bet, autoCashout: !bet.autoCashout })} label="💰 AUTO CASHOUT" />
+
+      {/* AUTO CASHOUT VALUE - only show if ON */}
+      {bet.autoCashout && (
+        <>
+          <div style={{ display: "flex", gap: 2, marginTop: 3, flexWrap: "wrap" }}>
+            {["1.50x", "2.00x", "5.00x", "10.00x"].map((v) => { const clean = v.replace("x", ""); const active = bet.auto === clean; return <button key={v} onClick={() => setBet({ ...bet, auto: clean })} style={{ flex: "1 1 0", minWidth: 32, padding: "3px 1px", background: active ? "#ffcc00" : "#2a2a2a", color: active ? "#000" : "#fff", border: "none", borderRadius: 4, fontWeight: "bold", fontSize: 9, cursor: "pointer" }}>{v}</button>; })}
+          </div>
+          <input value={bet.auto} onChange={(e) => setBet({ ...bet, auto: e.target.value })} type="number" step="0.1" placeholder="Custom e.g. 3.50" style={{ width: "100%", marginTop: 3, padding: 4, borderRadius: 4, border: "1px solid #333", background: "#222", color: "#fff", textAlign: "center", fontSize: 10, boxSizing: "border-box" }} />
+        </>
+      )}
+
       {!bet.placed ? (
-        <button onClick={() => placeBet(which)} disabled={phase === "crashed"} style={{ width: "100%", marginTop: 4, padding: 6, background: phase === "crashed" ? "#555" : "#008542", color: "#fff", border: "none", borderRadius: 5, fontWeight: "900", fontSize: 10, cursor: "pointer" }}>{phase === "crashed" ? "WAIT..." : `BET - GHS ${bet.amount || 0}`}</button>
+        <button onClick={() => placeBet(which)} disabled={phase === "crashed"} style={{ width: "100%", marginTop: 4, padding: 6, background: phase === "crashed" ? "#555" : bet.autoBet ? "#7c3aed" : "#008542", color: "#fff", border: "none", borderRadius: 5, fontWeight: "900", fontSize: 10, cursor: "pointer" }}>
+          {phase === "crashed" ? "WAIT..." : bet.autoBet ? "🤖 AUTO BET ON" : `BET - GHS ${bet.amount || 0}`}
+        </button>
       ) : bet.cashed ? (
         <div style={{ marginTop: 4, padding: 6, background: "#008542", borderRadius: 5, textAlign: "center", fontWeight: "900", fontSize: 10 }}>✅ @ {bet.cashAt}x</div>
       ) : (
@@ -81,30 +148,27 @@ export default function Aviator({ balance, setBalance }) {
 
   return (
     <div style={{ background: "#111", color: "#fff", padding: 4, paddingBottom: 70, boxSizing: "border-box", overflowX: "hidden", maxWidth: 480, margin: "0 auto" }}>
-      {/* HEADER - SMALL LIKE SPORTY */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "2px 4px" }}>
         <span style={{ fontWeight: "900", fontSize: 12 }}>✈️ AVIATOR</span>
         <span style={{ fontSize: 9, color: "#22c55e" }}>● LIVE #{round} • GHS {balance.toFixed(2)}</span>
       </div>
 
-      {/* HERO - SPORTY SIZE: ~140px tall */}
       <div style={{ background: "linear-gradient(135deg, #0a0a2a 0%, #1a1a4a 100%)", borderRadius: 8, padding: "6px 8px", minHeight: 130, height: 130, display: "flex", flexDirection: "column", justifyContent: "center", alignItems: "center", position: "relative", overflow: "hidden" }}>
         <div style={{ display: "flex", gap: 2, position: "absolute", top: 4, left: 0, right: 0, justifyContent: "center" }}>
           {HISTORY.map((h, i) => <span key={i} style={{ padding: "1px 5px", borderRadius: 10, fontSize: 8, fontWeight: "bold", background: parseFloat(h) > 5 ? "#7c3aed" : parseFloat(h) > 2 ? "#008542" : "#e53935" }}>{h}</span>)}
         </div>
         <div style={{ fontSize: 26, fontWeight: "900", color: phase === "crashed" ? "#ff4444" : "#ffcc00", lineHeight: 1, marginTop: 8 }}>{multiplier.toFixed(2)}x <span style={{ fontSize: 16 }}>{phase === "crashed" ? "💥" : "✈️"}</span></div>
-        <div style={{ fontSize: 9, color: "#aaa", marginTop: 2 }}>{phase === "crashed" ? "CRASHED! Wait..." : phase === "waiting" ? "Next round..." : "FLYING..."}</div>
+        <div style={{ fontSize: 9, color: "#aaa", marginTop: 2 }}>{phase === "crashed" ? "CRASHED! Wait..." : phase === "waiting" ? "Next round... 🤖 Auto Bet placing..." : "FLYING..."}</div>
       </div>
 
       {msg && <div style={{ background: "#1e3a1e", padding: 4, borderRadius: 5, fontSize: 9, textAlign: "center", marginTop: 4 }}>{msg}</div>}
 
-      {/* BETS - COMPACT, SIDE BY SIDE LIKE SPORTY */}
       <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginTop: 4 }}>
         {renderBet(1, bet1, setBet1, "#22c55e", "BET 1")}
         {renderBet(2, bet2, setBet2, "#a855f7", "BET 2")}
       </div>
 
-      <div style={{ fontSize: 9, textAlign: "center", color: "#888", marginTop: 4 }}>💡 Bet 1 = Safe 1.50x • Bet 2 = Big 10.00x</div>
+      <div style={{ fontSize: 9, textAlign: "center", color: "#888", marginTop: 4 }}>🤖 Turn ON Auto Bet + Auto Cashout to play hands-free!</div>
     </div>
   );
 }
